@@ -28,10 +28,15 @@ contract GenericFarcasterNFT_Script is Script {
         address paymentRecipient = msg.sender;
         uint256 maxSupply = DEFAULT_MAX_SUPPLY;
         
-        // Try to read numeric values from env if they exist
         if (vm.envExists("MINT_PRICE")) {
-            // Just use default for simplicity due to Forge 1.0 compatibility
-            // The bash script already passes this as a properly formatted number
+            string memory priceStr = vm.envString("MINT_PRICE");
+            if (bytes(priceStr).length > 0) {
+                // Parse the price string to extract the numeric value
+                uint256 parsedPrice = parseEtherValue(priceStr);
+                if (parsedPrice > 0) {
+                    mintPrice = parsedPrice;
+                }
+            }
         }
         
         if (vm.envExists("PAYMENT_RECIPIENT")) {
@@ -77,5 +82,45 @@ contract GenericFarcasterNFT_Script is Script {
         console2.log("Deployed GenericFarcasterNFT at:", address(nft));
 
         return nft;
+    }
+
+    function parseEtherValue(string memory input) internal pure returns (uint256) {
+        bytes memory inputBytes = bytes(input);
+        uint256 value = 0;
+        bool decimalFound = false;
+        uint8 decimals = 0;
+        
+        // Skip any leading spaces
+        uint i = 0;
+        while (i < inputBytes.length && inputBytes[i] == ' ') i++;
+        
+        // Parse the numeric part
+        for (; i < inputBytes.length; i++) {
+            if (inputBytes[i] >= '0' && inputBytes[i] <= '9') {
+                value = value * 10 + uint8(inputBytes[i]) - 48;
+                if (decimalFound) {
+                    decimals++;
+                    if (decimals >= 18) break; // Max precision for Ethereum
+                }
+            } else if (inputBytes[i] == '.' && !decimalFound) {
+                decimalFound = true;
+            } else {
+                // Stop at any non-numeric character (like "ether")
+                break;
+            }
+        }
+        
+        // Adjust for decimals to convert to wei
+        if (decimals > 0) {
+            while (decimals < 18) {
+                value *= 10;
+                decimals++;
+            }
+        } else {
+            // No decimal point found, assume the value is in ether
+            value *= 10**18;
+        }
+        
+        return value;
     }
 }
