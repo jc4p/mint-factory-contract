@@ -42,8 +42,8 @@ contract GenericFarcasterNFT_Script is Script {
         if (vm.envExists("PAYMENT_RECIPIENT")) {
             string memory recipientStr = vm.envString("PAYMENT_RECIPIENT");
             if (bytes(recipientStr).length > 0) {
-                // Assuming it's a valid address if provided
-                paymentRecipient = vm.addr(1); // Use the default address
+                // Parse the address from the string
+                paymentRecipient = parseAddress(recipientStr);
             }
         }
         
@@ -122,5 +122,27 @@ contract GenericFarcasterNFT_Script is Script {
         }
         
         return value;
+    }
+
+    function parseAddress(string memory addressStr) internal pure returns (address) {
+        bytes memory addressBytes = bytes(addressStr);
+        require(addressBytes.length == 42, "Invalid address length"); // 0x + 40 hex chars
+        
+        bytes memory tempBytes = new bytes(20);
+        for (uint i = 0; i < 20; i++) {
+            uint8 high = uint8(addressBytes[i*2 + 2]);
+            uint8 low = uint8(addressBytes[i*2 + 3]);
+            
+            high = high >= 65 && high <= 70 ? high - 55 : (high >= 97 && high <= 102 ? high - 87 : high - 48);
+            low = low >= 65 && low <= 70 ? low - 55 : (low >= 97 && low <= 102 ? low - 87 : low - 48);
+            
+            tempBytes[i] = bytes1(uint8((high * 16 + low)));
+        }
+        
+        address result;
+        assembly {
+            result := mload(add(tempBytes, 20))
+        }
+        return result;
     }
 }
