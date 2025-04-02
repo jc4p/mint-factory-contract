@@ -40,7 +40,7 @@ contract GenericFarcasterNFTTest is Test {
         nft = new GenericFarcasterNFT(BASE_URI, NFT_NAME, NFT_SYMBOL, MINT_PRICE, address(this), DEFAULT_MAX_SUPPLY);
     }
 
-    function test_InitialState() public view {
+    function testInitialState() public view {
         assertEq(nft.currentTokenId(), 0);
         assertEq(nft.creator(), address(this));
         assertEq(nft.mintPrice(), MINT_PRICE);
@@ -50,7 +50,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(nft.maxMintsPerTx(), 1);
     }
 
-    function test_PublicMint() public {
+    function testPublicMint() public {
         // Mint the first token as this contract (already initialized in setUp)
         uint256 firstTokenId = nft.mint{value: MINT_PRICE}();
         assertEq(firstTokenId, 0);
@@ -90,7 +90,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(address(nft).balance, 0);
     }
 
-    function test_TokenURI() public {
+    function testTokenURI() public {
         // Mint a token
         uint256 tokenId = nft.mint{value: MINT_PRICE}();
 
@@ -98,7 +98,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(nft.tokenURI(tokenId), string(abi.encodePacked(BASE_URI, toString(tokenId))));
     }
 
-    function test_MetadataInterface() public view {
+    function testMetadataInterface() public view {
         // Test name and symbol
         assertEq(nft.name(), NFT_NAME);
         assertEq(nft.symbol(), NFT_SYMBOL);
@@ -108,16 +108,17 @@ contract GenericFarcasterNFTTest is Test {
         assertTrue(nft.supportsInterface(type(IERC721Metadata).interfaceId), "Should support ERC721Metadata");
     }
 
-    function testFail_NonexistentTokenURI() public view {
-        // This should revert
+    function testRevertWhenNonexistentTokenURI() public {
+        // This should revert with the ERC721 nonexistent token error
+        vm.expectRevert(abi.encodeWithSignature("ERC721NonexistentToken(uint256)", 999));
         nft.tokenURI(999);
     }
 
-    function test_CreatorAddress() public view {
+    function testCreatorAddress() public view {
         assertEq(nft.creator(), address(this));
     }
 
-    function test_TransferToken() public {
+    function testTransferToken() public {
         // Mint a token
         uint256 tokenId = nft.mint{value: MINT_PRICE}();
 
@@ -131,7 +132,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(nft.ownerOf(tokenId), BOB);
     }
 
-    function test_ApproveAndTransferToken() public {
+    function testApproveAndTransferToken() public {
         // Mint a token
         uint256 tokenId = nft.mint{value: MINT_PRICE}();
 
@@ -144,26 +145,29 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(nft.ownerOf(tokenId), ALICE);
     }
 
-    function testFail_UnauthorizedTransfer() public {
+    function testRevertWhenUnauthorizedTransfer() public {
         // Mint a token
         uint256 tokenId = nft.mint{value: MINT_PRICE}();
 
         // Try to transfer token without approval (should fail)
         vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSignature("ERC721InsufficientApproval(address,uint256)", ALICE, 0));
         nft.transferFrom(address(this), ALICE, tokenId);
     }
 
-    function testFail_MintWithoutETH() public {
+    function testRevertWhenMintWithoutETH() public {
         // Attempt to mint without sending ETH (should fail)
+        vm.expectRevert("Must send exactly the mint price");
         nft.mint();
     }
 
-    function testFail_MintWithWrongETHAmount() public {
+    function testRevertWhenMintWithWrongETHAmount() public {
         // Attempt to mint with incorrect ETH amount (should fail)
+        vm.expectRevert("Must send exactly the mint price");
         nft.mint{value: 0.001 ether}();
     }
 
-    function test_CurrentTokenId() public {
+    function testCurrentTokenId() public {
         // Check initial token ID
         assertEq(nft.currentTokenId(), 0);
 
@@ -176,7 +180,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(nft.currentTokenId(), 2);
     }
 
-    function test_ETHTransferToPaymentRecipient() public {
+    function testETHTransferToPaymentRecipient() public {
         uint256 initialBalance = address(this).balance;
 
         // Mint a token and verify no ETH is stored in the contract
@@ -192,7 +196,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(address(this).balance, initialBalance);
     }
 
-    function test_BatchMintETHTransfer() public {
+    function testBatchMintETHTransfer() public {
         uint256 initialBalance = address(this).balance;
 
         // Mint 3 tokens in a row
@@ -210,7 +214,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(address(this).balance, initialBalance);
     }
 
-    function testFail_PaymentRecipientRejectedETH() public {
+    function testRevertWhenPaymentRecipientRejectsETH() public {
         // Deploy a RejectEther contract
         RejectEther rejector = new RejectEther();
 
@@ -218,10 +222,11 @@ contract GenericFarcasterNFTTest is Test {
         nft.setPaymentRecipient(address(rejector));
 
         // Now try to mint - this should fail because the payment recipient rejects ETH
+        vm.expectRevert("Transfer failed");
         nft.mint{value: MINT_PRICE}();
     }
 
-    function test_UpdateMintPrice() public {
+    function testUpdateMintPrice() public {
         // Verify initial mint price
         assertEq(nft.mintPrice(), MINT_PRICE);
 
@@ -240,13 +245,14 @@ contract GenericFarcasterNFTTest is Test {
         nft.mint{value: MINT_PRICE}();
     }
 
-    function testFail_UnauthorizedMintPriceUpdate() public {
+    function testRevertWhenUnauthorizedMintPriceUpdate() public {
         // Try to update mint price as unauthorized user (should fail)
         vm.prank(ALICE);
+        vm.expectRevert("Only creator or payment recipient can update");
         nft.setMintPrice(NEW_MINT_PRICE);
     }
 
-    function test_UpdatePaymentRecipient() public {
+    function testUpdatePaymentRecipient() public {
         // Verify initial payment recipient
         assertEq(nft.paymentRecipient(), address(this));
 
@@ -267,18 +273,20 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(BOB.balance, bobInitialBalance + MINT_PRICE);
     }
 
-    function testFail_UpdatePaymentRecipientToZeroAddress() public {
+    function testRevertWhenUpdatePaymentRecipientToZeroAddress() public {
         // Try to update payment recipient to zero address (should fail)
+        vm.expectRevert("Cannot set to zero address");
         nft.setPaymentRecipient(address(0));
     }
 
-    function testFail_UnauthorizedPaymentRecipientUpdate() public {
+    function testRevertWhenUnauthorizedPaymentRecipientUpdate() public {
         // Try to update payment recipient as unauthorized user (should fail)
         vm.prank(ALICE);
+        vm.expectRevert("Only creator or payment recipient can update");
         nft.setPaymentRecipient(BOB);
     }
 
-    function test_UpdateBaseURI() public {
+    function testUpdateBaseURI() public {
         // Mint a token with original base URI
         uint256 tokenId = nft.mint{value: MINT_PRICE}();
         assertEq(nft.tokenURI(tokenId), string(abi.encodePacked(BASE_URI, "0")));
@@ -291,13 +299,14 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(nft.tokenURI(tokenId), string(abi.encodePacked(newBaseURI, "0")));
     }
 
-    function testFail_UnauthorizedBaseURIUpdate() public {
+    function testRevertWhenUnauthorizedBaseURIUpdate() public {
         // Try to update base URI as unauthorized user (should fail)
         vm.prank(ALICE);
+        vm.expectRevert("Only creator or payment recipient can update");
         nft.setBaseURI("https://evil.example.com/tokens/");
     }
 
-    function test_PaymentRecipientCanUpdateBaseURI() public {
+    function testPaymentRecipientCanUpdateBaseURI() public {
         // First set payment recipient to BOB
         nft.setPaymentRecipient(BOB);
 
@@ -314,7 +323,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(nft.tokenURI(tokenId), string(abi.encodePacked(newBaseURI, "0")));
     }
 
-    function test_PaymentRecipientCanUpdateMintPrice() public {
+    function testPaymentRecipientCanUpdateMintPrice() public {
         // First set payment recipient to BOB
         nft.setPaymentRecipient(BOB);
 
@@ -333,7 +342,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(tokenId, 0);
     }
 
-    function test_PaymentRecipientCanUpdatePaymentRecipient() public {
+    function testPaymentRecipientCanUpdatePaymentRecipient() public {
         // First set payment recipient to BOB
         nft.setPaymentRecipient(BOB);
 
@@ -355,7 +364,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(CHARLIE.balance, charlieInitialBalance + MINT_PRICE);
     }
 
-    function test_CustomPaymentRecipientInConstructor() public {
+    function testCustomPaymentRecipientInConstructor() public {
         // Deploy a new NFT with custom payment recipient
         GenericFarcasterNFT customNft =
             new GenericFarcasterNFT(BASE_URI, NFT_NAME, NFT_SYMBOL, MINT_PRICE, CHARLIE, 10000);
@@ -371,7 +380,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(CHARLIE.balance, charlieInitialBalance + MINT_PRICE);
     }
 
-    function test_DefaultPaymentRecipientInConstructor() public {
+    function testDefaultPaymentRecipientInConstructor() public {
         // Deploy a new NFT with zero address as payment recipient (should default to creator)
         GenericFarcasterNFT defaultNft =
             new GenericFarcasterNFT(BASE_URI, NFT_NAME, NFT_SYMBOL, MINT_PRICE, address(0), 10000);
@@ -380,7 +389,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(defaultNft.paymentRecipient(), address(this));
     }
 
-    function test_ZeroMintPrice() public {
+    function testZeroMintPrice() public {
         // Deploy a new NFT with zero mint price
         GenericFarcasterNFT zeroNft =
             new GenericFarcasterNFT(BASE_URI, NFT_NAME, NFT_SYMBOL, ZERO_MINT_PRICE, address(this), 10000);
@@ -400,7 +409,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(address(this).balance, initialBalance);
     }
 
-    function test_MaxSupplyLimit() public {
+    function testMaxSupplyLimit() public {
         // Deploy a new NFT with a small max supply limit
         GenericFarcasterNFT limitedNft =
             new GenericFarcasterNFT(BASE_URI, NFT_NAME, NFT_SYMBOL, MINT_PRICE, address(this), SMALL_MAX_SUPPLY);
@@ -443,7 +452,7 @@ contract GenericFarcasterNFTTest is Test {
         limitedNft.mint{value: MINT_PRICE}();
     }
 
-    function test_MintingAvailable() public {
+    function testMintingAvailable() public {
         // Initialize with unlimited supply (0)
         (bool canMint, uint256 remaining) = nft.mintingAvailable();
         assertTrue(canMint);
@@ -458,7 +467,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(remainingAfter, type(uint256).max - 1); // Still virtually unlimited
     }
 
-    function test_TotalSupply() public {
+    function testTotalSupply() public {
         // Initialize with total supply of 0
         assertEq(nft.totalSupply(), 0);
 
@@ -473,7 +482,7 @@ contract GenericFarcasterNFTTest is Test {
         assertEq(nft.totalSupply(), 3);
     }
 
-    function test_UnlimitedSupply() public {
+    function testUnlimitedSupply() public {
         // Deploy a new NFT with unlimited supply (0)
         GenericFarcasterNFT unlimitedNft =
             new GenericFarcasterNFT(BASE_URI, NFT_NAME, NFT_SYMBOL, MINT_PRICE, address(this), 0);

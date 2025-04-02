@@ -2,5 +2,16 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+solc = "0.8.28"
+optimizer = true
+optimizer_runs = 20000
+evm_version = "paris"
+
+# Forge 1.0 specific settings
+ignored_error_codes = []
+bytecode_hash = "none"
+sparse_mode = false
+ffi = false
+verbosity = 3
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

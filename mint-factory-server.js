@@ -6,7 +6,9 @@
  * Listens only on localhost and expects environment variables in .env
  */
 
-const PORT = 4000;
+import { Elysia } from 'elysia';
+
+const PORT = 7890;
 
 // Function to run deploy-and-verify.sh with parameters
 async function deployContract(params) {
@@ -28,6 +30,9 @@ async function deployContract(params) {
     if (params.recipient) args.push("--recipient", params.recipient);
     if (params.max_supply !== undefined) args.push("--max-supply", params.max_supply.toString());
     if (params.chain_id) args.push("--chain-id", params.chain_id);
+    
+    // Add new Forge 1.0 compatible options
+    if (params.manual_verify === true) args.push("--manual-verify");
     
     // Create a process to run deploy-and-verify.sh
     const proc = Bun.spawn(["./deploy-and-verify.sh", ...args], {
@@ -56,7 +61,8 @@ async function deployContract(params) {
     }
     
     // Extract contract address from the output
-    const addressMatch = stdout.match(/Contract deployed at: (0x[a-fA-F0-9]{40})/);
+    // Updated to match the new output format from Forge 1.0
+    const addressMatch = stdout.match(/Deployed GenericFarcasterNFT at: (0x[a-fA-F0-9]{40})/);
     const contractAddress = addressMatch ? addressMatch[1] : null;
     
     return {
@@ -85,104 +91,51 @@ function validateParams(params) {
   return { valid: true };
 }
 
-// Create HTTP server - only listening on localhost
-const server = Bun.serve({
-  port: PORT,
-  hostname: "localhost", // Only bind to localhost interface
-  async fetch(req) {
-    const url = new URL(req.url);
-    const path = url.pathname;
-    
-    // Health check endpoint
-    if (path === "/health" && req.method === "GET") {
-      return new Response(JSON.stringify({ status: "ok" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    
-    // Handle deploy requests
-    if (path === "/deploy" && req.method === "POST") {
-      try {
-        // Parse JSON request body
-        const params = await req.json();
-        
-        // Validate recipient parameter
-        const validation = validateParams(params);
-        if (!validation.valid) {
-          return new Response(JSON.stringify({ 
-            success: false, 
-            error: validation.error 
-          }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-        
-        // Deploy contract
-        const result = await deployContract(params);
-        
-        return new Response(JSON.stringify(result), {
-          status: result.success ? 200 : 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        console.error("Error in /deploy:", error);
-        
-        return new Response(JSON.stringify({ 
-          success: false, 
-          error: error.message || "Internal server error"
-        }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
+// Create Elysia server - only listening on localhost
+const app = new Elysia()
+  // Health check endpoint
+  .get('/health', () => ({
+    status: 'ok'
+  }))
+  // Deploy endpoint
+  .post('/deploy', async ({ body }) => {
+    try {
+      // Validate recipient parameter
+      const validation = validateParams(body);
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error
+        };
       }
+
+      // Deploy contract
+      const result = await deployContract(body);
+      return result;
+    } catch (error) {
+      console.error("Error in /deploy:", error);
+      return {
+        success: false,
+        error: error.message || "Internal server error"
+      };
     }
-    
-    // Route not found
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: "Not found" 
-    }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-});
+  })
+  // Handle 404
+  .onError(({ code }) => {
+    if (code === 'NOT_FOUND') {
+      return {
+        success: false,
+        error: 'Not found'
+      };
+    }
+  })
+  .listen({
+    port: PORT,
+    hostname: 'localhost'
+  });
 
-console.log(`Mint Factory Server running at http://localhost:${PORT}`);
+// Store the actual server instance to get the actual port
+const server = app.server;
+const actualPort = server?.port || PORT;
+console.log(`Mint Factory Server running at http://localhost:${actualPort}`);
 console.log("IMPORTANT: This server only accepts local connections");
-
-// Documentation
-console.log(`
-API Endpoints:
-  GET /health - Health check endpoint
-  POST /deploy - Deploy a new NFT contract
-
-Required Parameters for /deploy:
-  - recipient: Payment recipient address (required)
-
-Optional Parameters:
-  - base_uri: Base URI for NFT metadata (default: https://fc-nfts.kasra.codes/tokens/)
-  - name: NFT collection name (default: Generic Farcaster NFT)
-  - symbol: NFT symbol (default: GNFT)
-  - price: Mint price in ether (default: 0.0025 ether)
-  - max_supply: Maximum supply (default: 0, which means unlimited)
-  - chain_id: Chain ID (default: 8453 for Base)
-
-Note: RPC_URL, PRIVATE_KEY, and BASESCAN_API_KEY must be set in your .env file
-
-Example curl command:
-  curl -X POST http://localhost:${PORT}/deploy \\
-    -H "Content-Type: application/json" \\
-    -d '{
-      "name": "My NFT Collection",
-      "symbol": "MYNFT",
-      "base_uri": "https://example.com/tokens/",
-      "price": "0.05 ether",
-      "recipient": "0x1234...5678",
-      "max_supply": 1000
-    }'
-`);
-
-export default server;

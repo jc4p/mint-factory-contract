@@ -16,6 +16,7 @@ DEFAULT_PAYMENT_RECIPIENT=""  # Will default to sender in the contract
 DEFAULT_MAX_SUPPLY=0  # 0 means unlimited supply
 DEFAULT_CHAIN_ID=8453  # Base chain
 DEFAULT_COMPILER_VERSION="0.8.28"
+DEFAULT_VERIFY_NEEDED="false"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -64,6 +65,10 @@ while [[ $# -gt 0 ]]; do
             BASESCAN_API_KEY="$2"
             shift 2
             ;;
+        --manual-verify)
+            VERIFY_NEEDED="true"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -80,6 +85,7 @@ PAYMENT_RECIPIENT="${PAYMENT_RECIPIENT:-$DEFAULT_PAYMENT_RECIPIENT}"
 MAX_SUPPLY="${MAX_SUPPLY:-$DEFAULT_MAX_SUPPLY}"
 CHAIN_ID="${CHAIN_ID:-$DEFAULT_CHAIN_ID}"
 COMPILER_VERSION="${COMPILER_VERSION:-$DEFAULT_COMPILER_VERSION}"
+VERIFY_NEEDED="${VERIFY_NEEDED:-$DEFAULT_VERIFY_NEEDED}"
 
 # Required environment variables
 if [ -z "$RPC_URL" ]; then
@@ -111,9 +117,21 @@ fi
 
 # Deploy the contract
 echo "Deploying contract..."
-DEPLOY_OUTPUT=$(BASE_URI="$BASE_URI" NFT_NAME="$NFT_NAME" NFT_SYMBOL="$NFT_SYMBOL" \
-    MINT_PRICE="$MINT_PRICE" PAYMENT_RECIPIENT="$PAYMENT_RECIPIENT" MAX_SUPPLY="$MAX_SUPPLY" \
-    forge script script/GenericFarcasterNFT.s.sol --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --broadcast)
+echo "Setting environment variables for deployment..."
+export BASE_URI="$BASE_URI"
+export NFT_NAME="$NFT_NAME"
+export NFT_SYMBOL="$NFT_SYMBOL"
+export MINT_PRICE="$MINT_PRICE"
+export PAYMENT_RECIPIENT="$PAYMENT_RECIPIENT"
+export MAX_SUPPLY="$MAX_SUPPLY"
+
+DEPLOY_OUTPUT=$(forge script script/GenericFarcasterNFT.s.sol:GenericFarcasterNFT_Script \
+    --rpc-url "$RPC_URL" \
+    --private-key "$PRIVATE_KEY" \
+    --broadcast \
+    --verify \
+    --etherscan-api-key "$BASESCAN_API_KEY" \
+    --chain-id "$CHAIN_ID")
 
 # Extract contract address from deployment output
 CONTRACT_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep -oP "Deployed GenericFarcasterNFT at: \K0x[a-fA-F0-9]{40}")
@@ -126,10 +144,18 @@ fi
 
 echo "Contract deployed at: $CONTRACT_ADDRESS"
 
-# Verify the contract
-echo "Verifying contract on Basescan..."
-forge verify-contract --chain-id "$CHAIN_ID" --watch --compiler-version "$COMPILER_VERSION" \
-    "$CONTRACT_ADDRESS" src/GenericFarcasterNFT.sol:GenericFarcasterNFT --etherscan-api-key "$BASESCAN_API_KEY"
+# With --verify flag, verification is handled automatically during deployment
+# This block is for manual verification if needed
+if [ "$VERIFY_NEEDED" = "true" ]; then
+    echo "Verifying contract on Basescan..."
+    forge verify-contract --chain-id "$CHAIN_ID" --watch --compiler-version "$COMPILER_VERSION" \
+        "$CONTRACT_ADDRESS" src/GenericFarcasterNFT.sol:GenericFarcasterNFT \
+        --etherscan-api-key "$BASESCAN_API_KEY" \
+        --constructor-args "$(cast abi-encode "constructor(string,string,string,uint256,address,uint256)" \
+        "$BASE_URI" "$NFT_NAME" "$NFT_SYMBOL" "$MINT_PRICE" "$PAYMENT_RECIPIENT" "$MAX_SUPPLY")"
+else
+    echo "Contract verification was handled during deployment with --verify flag"
+fi
 
 echo "✅ Contract successfully deployed and verified!"
 echo "Contract address: $CONTRACT_ADDRESS"
