@@ -61,8 +61,14 @@ async function deployContract(params) {
     }
     
     // Extract contract address from the output
-    // Updated to match the new output format from Forge 1.0
-    const addressMatch = stdout.match(/Deployed GenericFarcasterNFT at: (0x[a-fA-F0-9]{40})/);
+    // Try to match both patterns for compatibility
+    let addressMatch = stdout.match(/Deployed GenericFarcasterNFT at: (0x[a-fA-F0-9]{40})/);
+    
+    // If first pattern didn't match, try the output from bash script
+    if (!addressMatch) {
+      addressMatch = stdout.match(/Contract deployed at: (0x[a-fA-F0-9]{40})/);
+    }
+    
     const contractAddress = addressMatch ? addressMatch[1] : null;
     
     return {
