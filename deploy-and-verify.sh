@@ -129,6 +129,7 @@ DEPLOY_OUTPUT=$(forge script script/GenericFarcasterNFT.s.sol:GenericFarcasterNF
     --rpc-url "$RPC_URL" \
     --private-key "$PRIVATE_KEY" \
     --broadcast \
+    --nonce auto \
     --verify \
     --etherscan-api-key "$BASESCAN_API_KEY" \
     --chain-id "$CHAIN_ID")
