@@ -34,6 +34,9 @@ async function deployContract(params) {
     // Add new Forge 1.0 compatible options
     if (params.manual_verify === true) args.push("--manual-verify");
     
+    // Add option to skip waiting for verification
+    if (params.skip_verification !== false) args.push("--skip-verification");
+    
     // Create a process to run deploy-and-verify.sh
     const proc = Bun.spawn(["./deploy-and-verify.sh", ...args], {
       cwd: process.cwd(),
@@ -71,9 +74,14 @@ async function deployContract(params) {
     
     const contractAddress = addressMatch ? addressMatch[1] : null;
     
+    // Check if verification was skipped
+    const verificationSkipped = stdout.includes("Contract verification skipped as requested") || 
+                               stdout.includes("Contract verification is running in the background");
+    
     return {
       success: true,
       contractAddress,
+      verificationStatus: verificationSkipped ? "pending" : "complete",
       output: stdout
     };
   } catch (error) {

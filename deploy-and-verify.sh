@@ -17,6 +17,7 @@ DEFAULT_MAX_SUPPLY=0  # 0 means unlimited supply
 DEFAULT_CHAIN_ID=8453  # Base chain
 DEFAULT_COMPILER_VERSION="0.8.28"
 DEFAULT_VERIFY_NEEDED="false"
+DEFAULT_SKIP_VERIFICATION="false"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -69,6 +70,10 @@ while [[ $# -gt 0 ]]; do
             VERIFY_NEEDED="true"
             shift
             ;;
+        --skip-verification)
+            SKIP_VERIFICATION="true"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -86,6 +91,7 @@ MAX_SUPPLY="${MAX_SUPPLY:-$DEFAULT_MAX_SUPPLY}"
 CHAIN_ID="${CHAIN_ID:-$DEFAULT_CHAIN_ID}"
 COMPILER_VERSION="${COMPILER_VERSION:-$DEFAULT_COMPILER_VERSION}"
 VERIFY_NEEDED="${VERIFY_NEEDED:-$DEFAULT_VERIFY_NEEDED}"
+SKIP_VERIFICATION="${SKIP_VERIFICATION:-$DEFAULT_SKIP_VERIFICATION}"
 
 # Required environment variables
 if [ -z "$RPC_URL" ]; then
@@ -125,13 +131,19 @@ export MINT_PRICE="$MINT_PRICE"
 export PAYMENT_RECIPIENT="$PAYMENT_RECIPIENT"
 export MAX_SUPPLY="$MAX_SUPPLY"
 
-DEPLOY_OUTPUT=$(forge script script/GenericFarcasterNFT.s.sol:GenericFarcasterNFT_Script \
-    --rpc-url "$RPC_URL" \
-    --private-key "$PRIVATE_KEY" \
+# Deploy contract without verification to get it done quickly
+DEPLOY_CMD="forge script script/GenericFarcasterNFT.s.sol:GenericFarcasterNFT_Script \
+    --rpc-url \"$RPC_URL\" \
+    --private-key \"$PRIVATE_KEY\" \
     --broadcast \
-    --verify \
-    --etherscan-api-key "$BASESCAN_API_KEY" \
-    --chain-id "$CHAIN_ID")
+    --chain-id \"$CHAIN_ID\""
+
+# Only add verification flags if not skipping verification
+if [ "$SKIP_VERIFICATION" != "true" ]; then
+    DEPLOY_CMD="$DEPLOY_CMD --verify --etherscan-api-key \"$BASESCAN_API_KEY\""
+fi
+
+DEPLOY_OUTPUT=$(eval $DEPLOY_CMD)
 
 # Extract contract address from deployment output
 CONTRACT_ADDRESS=$(echo "$DEPLOY_OUTPUT" | grep -oP "Deployed GenericFarcasterNFT at: \K0x[a-fA-F0-9]{40}")
@@ -144,20 +156,39 @@ fi
 
 echo "Contract deployed at: $CONTRACT_ADDRESS"
 
-# With --verify flag, verification is handled automatically during deployment
-# This block is for manual verification if needed
-if [ "$VERIFY_NEEDED" = "true" ]; then
+# If verification was included in deploy or is not needed, we're done
+if [ "$SKIP_VERIFICATION" = "true" ]; then
+    echo "Contract verification skipped as requested."
+    
+    # Background verification process
+    (
+        echo "Starting background verification process..."
+        forge verify-contract --chain-id "$CHAIN_ID" --watch --compiler-version "$COMPILER_VERSION" \
+            "$CONTRACT_ADDRESS" src/GenericFarcasterNFT.sol:GenericFarcasterNFT \
+            --etherscan-api-key "$BASESCAN_API_KEY" \
+            --constructor-args "$(cast abi-encode "constructor(string,string,string,uint256,address,uint256)" \
+            "$BASE_URI" "$NFT_NAME" "$NFT_SYMBOL" "$MINT_PRICE" "$PAYMENT_RECIPIENT" "$MAX_SUPPLY")" \
+            > verification_output.log 2>&1
+        
+        if [ $? -eq 0 ]; then
+            echo "Background verification completed successfully" >> verification_output.log
+        else
+            echo "Background verification failed" >> verification_output.log
+        fi
+    ) &
+elif [ "$VERIFY_NEEDED" = "true" ]; then
     echo "Verifying contract on Basescan..."
     forge verify-contract --chain-id "$CHAIN_ID" --watch --compiler-version "$COMPILER_VERSION" \
         "$CONTRACT_ADDRESS" src/GenericFarcasterNFT.sol:GenericFarcasterNFT \
         --etherscan-api-key "$BASESCAN_API_KEY" \
         --constructor-args "$(cast abi-encode "constructor(string,string,string,uint256,address,uint256)" \
         "$BASE_URI" "$NFT_NAME" "$NFT_SYMBOL" "$MINT_PRICE" "$PAYMENT_RECIPIENT" "$MAX_SUPPLY")"
-else
-    echo "Contract verification was handled during deployment with --verify flag"
 fi
 
-echo "✅ Contract successfully deployed and verified!"
+echo "✅ Contract successfully deployed!"
+if [ "$SKIP_VERIFICATION" = "true" ]; then
+    echo "Contract verification is running in the background."
+fi
 echo "Contract address: $CONTRACT_ADDRESS"
 echo "View on Basescan: https://basescan.org/address/$CONTRACT_ADDRESS"
 
@@ -175,4 +206,7 @@ echo "View on Basescan: https://basescan.org/address/$CONTRACT_ADDRESS"
 # echo ""
 # echo "  3. Mixed approach (some from .env, some from command line):"
 # echo "     ./deploy-and-verify.sh --name \"My NFT\" --price \"0.1 ether\""
+# echo ""
+# echo "  4. Skip waiting for verification to complete:"
+# echo "     ./deploy-and-verify.sh --skip-verification"
 # echo ""
